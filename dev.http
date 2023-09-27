@@ -1,0 +1,21 @@
+### Create Author
+POST http://127.0.0.1:8080/authors?name=daba12345#
+
+### List Authors
+GET http://127.0.0.1:8080/authors
+
+### Get Author by id
+GET http://127.0.0.1:8080/authors/1
+
+
+### List posts
+GET http://127.0.0.1:8080/posts
+
+### Create post
+POST http://127.0.0.1:8080/posts?title=News&&body=helloworld&&author_id=5
+
+### Get post
+GET http://127.0.0.1:8080/posts/3
+
+### Delete post
+POST http://127.0.0.1:8080/posts/delete/7
