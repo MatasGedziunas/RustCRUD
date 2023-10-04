@@ -5,12 +5,10 @@ pub struct Validations {}
 impl Validations {
     pub fn validate(field: &str) -> Result<(), warp::Rejection> {
         let max_count = 15;
-        let min_count = 6;
+        let min_count = 4;
         if (Self::bigger_than_max_charachters(field, max_count)) {
             return Err(warp::reject::custom(TooLongError));
         } else if (Self::smaller_than_min_charachters(field, min_count)) {
-            return Err(warp::reject::custom(TooShortError));
-        } else if (Self::no_special_charachters(field)) {
             return Err(warp::reject::custom(TooShortError));
         } else {
             return Ok(());
@@ -57,3 +55,7 @@ impl warp::reject::Reject for DatabaseError {}
 #[derive(Debug)]
 pub struct MissingParameter;
 impl warp::reject::Reject for MissingParameter {}
+
+#[derive(Debug)]
+pub struct NoMatchingUser;
+impl warp::reject::Reject for NoMatchingUser {}

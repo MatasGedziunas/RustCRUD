@@ -1,6 +1,10 @@
 use chrono::Utc;
+use mime_guess::from_path;
 use rusqlite::{Connection, Error};
 use serde_json::{json, Value};
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 
 pub async fn list_posts() -> Result<impl warp::Reply, Error> {
     match Connection::open("/home/studentas/Documents/blog.db") {
@@ -103,4 +107,31 @@ pub async fn delete_post(id: i16) -> Result<impl warp::Reply, Error> {
         }
         Err(e) => Err(e),
     }
+}
+
+pub async fn upload_file(filename: &str, post_id: i16) -> Result<impl warp::Reply, Error> {
+    println!("Upload");
+    match Connection::open("/home/studentas/Documents/blog.db") {
+        Ok(conn) => {
+            let mut filename_parts = filename.split(".");
+            if let Some(first_part) = filename_parts.next() {
+                // let mut stmt = "INSERT INTO "
+                Ok(warp::reply::json(&"File uploaded sucessfully"))
+            } else {
+                // The iterator is empty
+                Err(Error::InvalidQuery)
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn is_allowed_file_type(file_type: &str) -> bool {
+    let allowed_types = vec![
+        "application/pdf",
+        "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+    ];
+    allowed_types.contains(&file_type)
 }

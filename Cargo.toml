@@ -6,7 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytes = "1.5.0"
 chrono = "0.4"
+futures = "0.3.28"
+hmac = "0.12.1"
+jsonwebtoken = "8.3.0"
+jwt = "0.16.0"
+mime_guess = "2.0.4"
 rand = "0.8.5"
 regex = "1.9.5"
 rusqlite = "0.29.0"

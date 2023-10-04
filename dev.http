@@ -19,3 +19,10 @@ GET http://127.0.0.1:8080/posts/3
 
 ### Delete post
 POST http://127.0.0.1:8080/posts/delete/7
+Jwt-Token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxIiwiZXhwIjoxNjk2NDA0MjI5fQ.qmiChMpqzUKPGoQZVynU1vSsVzr1y6ihgd3YLGBJ1TkuJqi9_GN3rN94kdtBSxIjunzuMGStrcp5Kv7c6srkfg
+
+### CREATE USER
+POST http://127.0.0.1:8080/users/?username=Tadasa&&password=LabaDiena
+
+### LOGIN USER
+GET http://127.0.0.1:8080/users/login/?username=Tadasa&&password=LabaDiena

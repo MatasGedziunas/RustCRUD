@@ -21,8 +21,12 @@ pub fn hash_string(password: &str, salt: &str) -> String {
     hash_hex
 }
 
-pub fn verify_string(stored_hash: &str, entered_password: &str, salt: &str) -> bool {
-    let entered_hash = hash_string(entered_password, salt);
+pub fn verify_string(stored_hash: &str, entered_string: &str, salt: &str) -> bool {
+    println!(
+        "stored: {};  entered: {}; salt: {}",
+        stored_hash, entered_string, salt
+    );
+    let entered_hash = hash_string(entered_string, salt);
     entered_hash == stored_hash
 }
 
