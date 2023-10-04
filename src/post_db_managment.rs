@@ -1,10 +1,16 @@
 use chrono::Utc;
 use mime_guess::from_path;
 use rusqlite::{Connection, Error};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::vec;
+use warp::reject::Rejection;
+
+use crate::middleware::MyError;
+use crate::validations::{DatabaseError, Errors};
 
 pub async fn list_posts() -> Result<impl warp::Reply, Error> {
     match Connection::open("/home/studentas/Documents/blog.db") {
@@ -109,29 +115,76 @@ pub async fn delete_post(id: i16) -> Result<impl warp::Reply, Error> {
     }
 }
 
-pub async fn upload_file(filename: &str, post_id: i16) -> Result<impl warp::Reply, Error> {
-    println!("Upload");
+#[derive(Debug, Deserialize, Serialize)]
+struct FileData {
+    name: String,
+    data: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct FormData {
+    files: Vec<FileData>,
+    post_id: i16, // Include other fields as needed
+}
+pub async fn upload_files(data: Value) -> Result<impl warp::Reply, Rejection> {
+    // Deserialize the JSON data into your Rust struct
+    let form_data: FormData = serde_json::from_value(data).map_err(|e| {
+        eprintln!("Failed to parse JSON: {:?}", e);
+        warp::reject::custom(MyError::InvalidJson)
+    })?;
     match Connection::open("/home/studentas/Documents/blog.db") {
         Ok(conn) => {
-            let mut filename_parts = filename.split(".");
-            if let Some(first_part) = filename_parts.next() {
-                // let mut stmt = "INSERT INTO "
-                Ok(warp::reply::json(&"File uploaded sucessfully"))
-            } else {
-                // The iterator is empty
-                Err(Error::InvalidQuery)
+            // Process the files and other fields
+            let mut file_names: Vec<String> = Vec::new();
+            let mut not_uploaded_file_names: Vec<String> = Vec::new();
+            let sql_query = "INSERT INTO post_files (file, post_id, name) VALUES (?1, ?2, ?3)";
+            let post_id = form_data.post_id;
+            for file in form_data.files {
+                let filename = file.name;
+                if (is_allowed_file_type(&filename)) {
+                    let base64_data = file.data;
+                    file_names.push(filename.to_owned());
+                    let mut stmt = conn
+                        .prepare(sql_query)
+                        .map_err(|_| Err::<MyError, _>(Errors::DatabaseError))
+                        .unwrap();
+                    let _ = stmt
+                        .execute([base64_data, post_id.to_string(), filename])
+                        .map_err(|_| Err::<MyError, _>(Errors::DatabaseError));
+                } else {
+                    not_uploaded_file_names.push(filename);
+                }
             }
+            // Access other fields as needed
+            if not_uploaded_file_names.is_empty() {
+                Ok(warp::reply::json(&format!(
+                    "Uploaded files {:?} ; to post {}",
+                    file_names, post_id
+                )))
+            } else if file_names.is_empty() {
+                Ok(warp::reply::json(&format!(
+                    "Unable to upload files (wrong extensions) {:?}",
+                    not_uploaded_file_names
+                )))
+            } else {
+                Ok(warp::reply::json(&format!(
+                    "Uploaded files {:?} ; to post {} \n
+                Unable to upload files (wrong extensions) {:?}",
+                    file_names, post_id, not_uploaded_file_names
+                )))
+            }
+
+            // Rest of your upload logic...
         }
-        Err(e) => Err(e),
+        Err(_) => Err(warp::reject::custom(DatabaseError)),
     }
 }
 
-fn is_allowed_file_type(file_type: &str) -> bool {
-    let allowed_types = vec![
-        "application/pdf",
-        "text/plain",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-    ];
-    allowed_types.contains(&file_type)
+pub fn is_allowed_file_type(file_name: &str) -> bool {
+    let allowed_extensions = ["pdf", "txt", "docx", "doc"];
+    if let Some(extension) = file_name.split('.').last() {
+        allowed_extensions.contains(&extension)
+    } else {
+        false
+    }
 }

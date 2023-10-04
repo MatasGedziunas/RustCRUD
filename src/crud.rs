@@ -1,12 +1,14 @@
 use bytes::BufMut;
 use futures::TryStreamExt;
+use rusqlite::Connection;
+use serde_json::Value;
 use std::collections::HashMap;
 use warp::filters::multipart::{FormData, Part};
 use warp::reject::{self, Rejection};
 use warp::reply::Reply;
 use warp::{reject::reject, Filter};
 
-use crate::middleware::with_auth;
+use crate::middleware::{check_file_type, with_auth, MyError};
 use crate::user_db_managment;
 use crate::validations::{DatabaseError, MissingParameter, NoMatchingUser};
 use crate::{author_db_managment, post_db_managment, validations::Validations};
@@ -94,7 +96,15 @@ pub fn post_filter() -> impl Filter<Extract = impl warp::Reply, Error = warp::Re
         .and(warp::path::end())
         .and_then(delete_post);
 
-    create.or(get).or(list).or(delete)
+    let upload = warp::post()
+        .and(post_base)
+        .and(warp::path("upload"))
+        // .and(check_file_type().untuple_one())
+        .and(with_auth().untuple_one())
+        .and(warp::body::json())
+        .and_then(upload_files);
+
+    create.or(get).or(list).or(delete).or(upload)
 }
 
 async fn list_posts() -> Result<impl warp::Reply, warp::Rejection> {
@@ -136,43 +146,12 @@ async fn delete_post(id: i16) -> Result<impl warp::Reply, warp::Rejection> {
     }
 }
 
-// async fn upload(form: FormData) -> Result<impl Reply, Rejection> {
-//     let parts: Vec<Part> = form.try_collect().await.map_err(|e| {
-//         eprintln!("form error: {}", e);
-//         warp::reject::reject()
-//     })?;
-//     let mut file_data;
-//     for p in parts {
-//         if p.name() == "file" {
-//             let content_type = p.content_type();
-//             let file_ending;
-//             match content_type {
-//                 Some(file_type) => match file_type {
-//                     "application/pdf" => {
-//                         file_ending = "pdf";
-//                     }
-//                     "image/png" => {
-//                         file_ending = "png";
-//                     }
-//                     v => {
-//                         eprintln!("invalid file type found: {}", v);
-//                         return Err(warp::reject::reject());
-//                     }
-//                 },
-//                 None => {
-//                     eprintln!("file type could not be determined");
-//                     return Err(warp::reject::reject());
-//                 }
-//             }
-//             let file_data = warp::hyper::body::to_bytes(p.stream()).await.map_err(|e| {
-//                 eprintln!("error reading file data: {}", e);
-//                 warp::reject::reject()
-//             })?;
-//         }
-//     }
-
-//     Ok("success")
-// }
+async fn upload_files(data: Value) -> Result<impl Reply, Rejection> {
+    match post_db_managment::upload_files(data).await {
+        Ok(reply) => Ok(reply),
+        Err(rejection) => Err(rejection),
+    }
+}
 
 pub fn user_filter() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let user_filter_base = warp::path("users");

@@ -19,8 +19,25 @@ GET http://127.0.0.1:8080/posts/3
 
 ### Delete post
 POST http://127.0.0.1:8080/posts/delete/7
-Jwt-Token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxIiwiZXhwIjoxNjk2NDA0MjI5fQ.qmiChMpqzUKPGoQZVynU1vSsVzr1y6ihgd3YLGBJ1TkuJqi9_GN3rN94kdtBSxIjunzuMGStrcp5Kv7c6srkfg
+Jwt-Token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxIiwiZXhwIjoxNjk2NDA0MzE0fQ.ofnsF_fc9RnwZAXErhs8H83B67tPvWht6BeRTsfQ9ZqCTt4BP0kOFgo6YNb6EIPhgb4MuuOwiUwrzR77tionGg
 
+### UPLOAD FILE
+POST http://127.0.0.1:8080/posts/upload
+content-type: application/json
+
+{
+  "files": [
+    {
+      "name": "file1.txt",
+      "data": "Base64EncodedDataOfFile1"
+    },
+    {
+      "name": "file2.png",
+      "data": "Base64EncodedDataOfFile2"
+    }
+  ],
+  "post_id": 2
+}
 ### CREATE USER
 POST http://127.0.0.1:8080/users/?username=Tadasa&&password=LabaDiena
 

@@ -10,9 +10,10 @@ use warp::{
     Filter,
 };
 
-use crate::user_db_managment;
+use crate::{post_db_managment::is_allowed_file_type, user_db_managment, validations::Errors};
 
 const TOKEN_HEADER: &str = "Jwt-Token";
+const FILE_HEADER: &str = "content-type";
 const JWT_SECRET: &[u8] = b"secret";
 
 #[derive(Debug)]
@@ -23,6 +24,7 @@ pub enum MyError {
     InvalidAuthHeaderError,
     // Add more custom error variants as needed
     FailAuth,
+    InvalidJson,
 }
 impl Reject for MyError {}
 
@@ -50,6 +52,16 @@ pub fn with_auth() -> impl Filter<Extract = ((),), Error = warp::Rejection> + Cl
                     }
                 }
                 Err(_) => Err(warp::reject::custom(FailAuth)),
+            }
+        })
+}
+pub fn check_file_type() -> impl Filter<Extract = ((),), Error = warp::Rejection> + Clone {
+    warp::any()
+        .and(warp::header::<String>(FILE_HEADER))
+        .and_then(move |file_type: String| async move {
+            match is_allowed_file_type(&file_type) {
+                true => return Ok::<(), warp::Rejection>(()),
+                false => return Err(warp::reject::custom(Errors::InvalidFileType)),
             }
         })
 }

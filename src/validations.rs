@@ -59,3 +59,12 @@ impl warp::reject::Reject for MissingParameter {}
 #[derive(Debug)]
 pub struct NoMatchingUser;
 impl warp::reject::Reject for NoMatchingUser {}
+
+#[derive(Debug)]
+pub enum Errors {
+    DatabaseError,
+    InvalidJson,
+    InvalidFileType,
+}
+
+impl warp::reject::Reject for Errors {}
