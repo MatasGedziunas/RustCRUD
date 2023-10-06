@@ -16,18 +16,6 @@ const TOKEN_HEADER: &str = "Jwt-Token";
 const FILE_HEADER: &str = "content-type";
 const JWT_SECRET: &[u8] = b"secret";
 
-#[derive(Debug)]
-pub enum MyError {
-    JWTTokenError,
-    JWTTokenCreationError,
-    NoAuthHeaderError,
-    InvalidAuthHeaderError,
-    // Add more custom error variants as needed
-    FailAuth,
-    InvalidJson,
-}
-impl Reject for MyError {}
-
 // async fn validate_jwt_token(headers: HeaderMap<HeaderValue>) -> Result<String, Rejection> {
 //     println!("{:?}", headers);
 //     return Ok("".to_lowercase());
@@ -69,3 +57,15 @@ pub fn check_file_type() -> impl Filter<Extract = ((),), Error = warp::Rejection
 #[derive(Debug)]
 pub struct FailAuth;
 impl warp::reject::Reject for FailAuth {}
+
+#[derive(Debug)]
+pub enum MyError {
+    JWTTokenError,
+    JWTTokenCreationError,
+    NoAuthHeaderError,
+    InvalidAuthHeaderError,
+    // Add more custom error variants as needed
+    FailAuth,
+    InvalidJson,
+}
+impl Reject for MyError {}

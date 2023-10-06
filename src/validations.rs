@@ -65,6 +65,9 @@ pub enum Errors {
     DatabaseError,
     InvalidJson,
     InvalidFileType,
+    InvalidBase64String,
+    FileNotFound,
+    InvalidQuery,
 }
 
 impl warp::reject::Reject for Errors {}

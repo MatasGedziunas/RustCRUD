@@ -4,13 +4,13 @@ use rusqlite::Connection;
 use serde_json::Value;
 use std::collections::HashMap;
 use warp::filters::multipart::{FormData, Part};
-use warp::reject::{self, Rejection};
+use warp::reject::{self, InvalidQuery, Rejection};
 use warp::reply::Reply;
 use warp::{reject::reject, Filter};
 
 use crate::middleware::{check_file_type, with_auth, MyError};
 use crate::user_db_managment;
-use crate::validations::{DatabaseError, MissingParameter, NoMatchingUser};
+use crate::validations::{DatabaseError, Errors, MissingParameter, NoMatchingUser};
 use crate::{author_db_managment, post_db_managment, validations::Validations};
 pub fn author_filter() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let author_base = warp::path("authors");
@@ -85,6 +85,7 @@ pub fn post_filter() -> impl Filter<Extract = impl warp::Reply, Error = warp::Re
         .and(post_base)
         .and(with_auth().untuple_one())
         .and(warp::query::<HashMap<String, String>>())
+        .and(warp::body::json())
         .and(warp::path::end())
         .and_then(create_post);
 
@@ -99,12 +100,22 @@ pub fn post_filter() -> impl Filter<Extract = impl warp::Reply, Error = warp::Re
     let upload = warp::post()
         .and(post_base)
         .and(warp::path("upload"))
+        .and(warp::path::param::<i16>())
         // .and(check_file_type().untuple_one())
         .and(with_auth().untuple_one())
         .and(warp::body::json())
         .and_then(upload_files);
 
-    create.or(get).or(list).or(delete).or(upload)
+    let download = warp::post()
+        .and(post_base)
+        .and(warp::path("download"))
+        .and(warp::query::<HashMap<String, String>>())
+        .and(warp::path::end())
+        // .and(check_file_type().untuple_one())
+        .and(with_auth().untuple_one())
+        .and_then(download_files);
+
+    upload.or(create).or(get).or(list).or(delete).or(download)
 }
 
 async fn list_posts() -> Result<impl warp::Reply, warp::Rejection> {
@@ -121,21 +132,24 @@ async fn get_post(id: i16) -> Result<impl warp::Reply, warp::Rejection> {
     }
 }
 
-async fn create_post(param: HashMap<String, String>) -> Result<impl warp::Reply, warp::Rejection> {
+async fn create_post(
+    param: HashMap<String, String>,
+    files: Value,
+) -> Result<impl warp::Reply, warp::Rejection> {
     if let (Some(title), Some(body), Some(author_id)) = (
         param.get("title"),
         param.get("body"),
         param.get("author_id"),
     ) {
         match Validations::validate(title) {
-            Ok(_) => match post_db_managment::create_post(title, body, author_id).await {
+            Ok(_) => match post_db_managment::create_post(title, body, author_id, files).await {
                 Ok(reply) => Ok(reply),
                 Err(_) => Err(reject()),
             },
             Err(rejection) => Err(rejection),
         }
     } else {
-        Err(warp::reject::custom(DatabaseError))
+        Err(warp::reject::custom(Errors::InvalidQuery))
     }
 }
 
@@ -146,10 +160,21 @@ async fn delete_post(id: i16) -> Result<impl warp::Reply, warp::Rejection> {
     }
 }
 
-async fn upload_files(data: Value) -> Result<impl Reply, Rejection> {
-    match post_db_managment::upload_files(data).await {
+async fn upload_files(post_id: i16, data: Value) -> Result<impl Reply, Rejection> {
+    match post_db_managment::upload_files(data, &post_id.to_string(), None).await {
         Ok(reply) => Ok(reply),
         Err(rejection) => Err(rejection),
+    }
+}
+
+async fn download_files(param: HashMap<String, String>) -> Result<impl Reply, Rejection> {
+    if let (Some(post_id), Some(file_name)) = (param.get("post_id"), param.get("file_name")) {
+        match post_db_managment::download_files(post_id, file_name).await {
+            Ok(reply) => Ok(reply),
+            Err(rejection) => Err(rejection),
+        }
+    } else {
+        return Err(warp::reject::custom(Errors::InvalidQuery));
     }
 }
 

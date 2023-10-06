@@ -23,6 +23,7 @@ Jwt-Token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxIiwiZXhwIjoxNjk2NDA0
 
 ### UPLOAD FILE
 POST http://127.0.0.1:8080/posts/upload
+Jwt-Token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxIiwiZXhwIjoxNjk2NDEyODEyfQ.JpdXkFRrJ2S1XtmcniS8wcqnCCSX-Fl4eD5vwbx8sBlOuep--933m-1vo2UjCD6gVEgldpqAwtGExllEehLj6w
 content-type: application/json
 
 {

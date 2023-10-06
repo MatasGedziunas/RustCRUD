@@ -1,3 +1,4 @@
+use base64::{engine, Engine};
 use chrono::Utc;
 use mime_guess::from_path;
 use rusqlite::{Connection, Error};
@@ -11,6 +12,8 @@ use warp::reject::Rejection;
 
 use crate::middleware::MyError;
 use crate::validations::{DatabaseError, Errors};
+
+const ALLOWED_FILE_SIZE: usize = 10 * 1024 * 1024;
 
 pub async fn list_posts() -> Result<impl warp::Reply, Error> {
     match Connection::open("/home/studentas/Documents/blog.db") {
@@ -69,24 +72,57 @@ pub async fn create_post(
     title: &String,
     body: &String,
     author_id: &String,
-) -> Result<impl warp::Reply, Error> {
+    files: Value,
+) -> Result<impl warp::Reply, Errors> {
     println!("Create");
     match Connection::open("/home/studentas/Documents/blog.db") {
         Ok(conn) => match author_id_exists(&conn, author_id) {
             Some(count) if count == 1 => {
-                let mut stmt = conn.prepare("INSERT INTO posts (title, body, author_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)")?;
                 let time_now = Utc::now();
                 let now_str = time_now.format("%Y-%m-%d %H:%M:%S").to_string();
-                stmt.execute([&title, &body, &author_id, &now_str, &now_str])?;
-                Ok(warp::reply::json(&format!(
-                    "Post created with info: title: {} ; body: {} ; author_id: {}",
-                    title, body, author_id
-                )))
+                let post_id = match conn.execute(
+                    "INSERT INTO posts (title, body, author_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    &[title, body, author_id, &now_str, &now_str],
+                ) {
+                    Ok(_) => conn.last_insert_rowid(), // Get the last inserted row id (post_id)
+                    Err(_) => return Err(Errors::DatabaseError),
+                };
+                let form_data: FormData = serde_json::from_value(files).map_err(|e| {
+                    eprintln!("Failed to parse JSON: {:?}", e);
+                    Errors::InvalidJson
+                })?;
+                // Process the files and other fields
+                let mut file_names: Vec<String> = Vec::new();
+                let mut not_uploaded_file_names: Vec<String> = Vec::new();
+                let sql_query = "INSERT INTO post_files (file, post_id, name) VALUES (?1, ?2, ?3)";
+                for file in form_data.files {
+                    let filename = file.name;
+                    let base64_data = file.data;
+                    match (validate(&filename, &base64_data)) {
+                        Ok(true) => {
+                            file_names.push(filename.to_owned());
+                            let mut stmt = conn
+                                .prepare(sql_query)
+                                .map_err(|_| Err::<MyError, _>(Errors::DatabaseError))
+                                .unwrap();
+                            let _ = stmt
+                                .execute([base64_data, post_id.to_string(), filename])
+                                .map_err(|_| Err::<MyError, _>(Errors::DatabaseError));
+                        }
+                        Ok(false) => {
+                            not_uploaded_file_names.push(filename);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(warp::reply::json(&json!({
+                    "post created with post_id": &post_id
+                })))
             }
-            Some(_) => Err(Error::InvalidQuery),
-            None => Err(Error::InvalidQuery),
+            Some(_) => Err(Errors::DatabaseError),
+            None => Err(Errors::DatabaseError),
         },
-        Err(e) => Err(e),
+        Err(_) => Err(Errors::DatabaseError),
     }
 }
 
@@ -124,59 +160,107 @@ struct FileData {
 #[derive(Debug, Deserialize, Serialize)]
 struct FormData {
     files: Vec<FileData>,
-    post_id: i16, // Include other fields as needed
+    // post_id: String, // post_id: i16, // Include other fields as needed
 }
-pub async fn upload_files(data: Value) -> Result<impl warp::Reply, Rejection> {
+pub async fn upload_files(
+    data: Value,
+    post_id: &String,
+    conn: Option<Connection>,
+) -> Result<impl warp::Reply, Rejection> {
     // Deserialize the JSON data into your Rust struct
+    println!("upload");
+    let conn = conn.unwrap_or_else(|| {
+        Connection::open("/home/studentas/Documents/blog.db")
+            .expect("Failed to open database connection")
+    });
     let form_data: FormData = serde_json::from_value(data).map_err(|e| {
         eprintln!("Failed to parse JSON: {:?}", e);
         warp::reject::custom(MyError::InvalidJson)
     })?;
+    // Process the files and other fields
+    let mut file_names: Vec<String> = Vec::new();
+    let mut not_uploaded_file_names: Vec<String> = Vec::new();
+    let sql_query = "INSERT INTO post_files (file, post_id, name) VALUES (?1, ?2, ?3)";
+    for file in form_data.files {
+        let filename = file.name;
+        let base64_data = file.data;
+        match (validate(&filename, &base64_data)) {
+            Ok(true) => {
+                file_names.push(filename.to_owned());
+                let mut stmt = conn
+                    .prepare(sql_query)
+                    .map_err(|_| Err::<MyError, _>(Errors::DatabaseError))
+                    .unwrap();
+                let _ = stmt
+                    .execute([base64_data, post_id.to_string(), filename])
+                    .map_err(|_| Err::<MyError, _>(Errors::DatabaseError));
+            }
+            Ok(false) => {
+                not_uploaded_file_names.push(filename);
+            }
+            Err(e) => return Err(warp::reject::custom(e)),
+        }
+    }
+    // Access other fields as needed
+    if not_uploaded_file_names.is_empty() {
+        Ok(warp::reply::json(&format!(
+            "Uploaded files {:?} ; to post {}",
+            file_names, post_id
+        )))
+    } else if file_names.is_empty() {
+        Ok(warp::reply::json(&format!(
+            "Unable to upload files {:?}",
+            not_uploaded_file_names
+        )))
+    } else {
+        Ok(warp::reply::json(&format!(
+            "Uploaded files {:?} ; to post {} \n
+                Unable to upload files {:?}",
+            file_names, post_id, not_uploaded_file_names
+        )))
+    }
+}
+
+pub async fn download_files(
+    post_id: &String,
+    file_name: &String,
+) -> Result<impl warp::Reply, Rejection> {
     match Connection::open("/home/studentas/Documents/blog.db") {
         Ok(conn) => {
-            // Process the files and other fields
-            let mut file_names: Vec<String> = Vec::new();
-            let mut not_uploaded_file_names: Vec<String> = Vec::new();
-            let sql_query = "INSERT INTO post_files (file, post_id, name) VALUES (?1, ?2, ?3)";
-            let post_id = form_data.post_id;
-            for file in form_data.files {
-                let filename = file.name;
-                if (is_allowed_file_type(&filename)) {
-                    let base64_data = file.data;
-                    file_names.push(filename.to_owned());
-                    let mut stmt = conn
-                        .prepare(sql_query)
-                        .map_err(|_| Err::<MyError, _>(Errors::DatabaseError))
+            let mut stmt = conn
+                .prepare("SELECT file FROM post_files WHERE post_id = ?1 AND name = ?2")
+                .map_err(|_| warp::reject::custom(DatabaseError))?;
+            let row = stmt
+                .query_map([&post_id, &file_name], |row| {
+                    let file_base64: String = row.get(0)?; // Assuming the "file" column is a String
+                    let file_data = engine::general_purpose::STANDARD
+                        .decode(file_base64)
                         .unwrap();
-                    let _ = stmt
-                        .execute([base64_data, post_id.to_string(), filename])
-                        .map_err(|_| Err::<MyError, _>(Errors::DatabaseError));
-                } else {
-                    not_uploaded_file_names.push(filename);
+                    Ok(file_data)
+                })
+                .unwrap()
+                .next();
+            match row {
+                Some(result) => {
+                    match result {
+                        Ok(file_data) => {
+                            let response = warp::http::Response::builder()
+                                .header("Content-Type", "application/octet-stream") // Set the appropriate content type
+                                .header(
+                                    "Content-Disposition",
+                                    format!("attachment; filename=\"{}\"", file_name),
+                                ) // Set the file name for download
+                                .body(warp::hyper::Body::from(file_data))
+                                .map_err(|_| warp::reject::custom(Errors::DatabaseError))?;
+                            return Ok(response);
+                        }
+                        Err(_) => return Err(warp::reject::custom(Errors::DatabaseError)),
+                    }
                 }
+                None => Err(warp::reject::custom(Errors::FileNotFound)),
             }
-            // Access other fields as needed
-            if not_uploaded_file_names.is_empty() {
-                Ok(warp::reply::json(&format!(
-                    "Uploaded files {:?} ; to post {}",
-                    file_names, post_id
-                )))
-            } else if file_names.is_empty() {
-                Ok(warp::reply::json(&format!(
-                    "Unable to upload files (wrong extensions) {:?}",
-                    not_uploaded_file_names
-                )))
-            } else {
-                Ok(warp::reply::json(&format!(
-                    "Uploaded files {:?} ; to post {} \n
-                Unable to upload files (wrong extensions) {:?}",
-                    file_names, post_id, not_uploaded_file_names
-                )))
-            }
-
-            // Rest of your upload logic...
         }
-        Err(_) => Err(warp::reject::custom(DatabaseError)),
+        Err(_) => Err(warp::reject::custom(Errors::DatabaseError)),
     }
 }
 
@@ -186,5 +270,32 @@ pub fn is_allowed_file_type(file_name: &str) -> bool {
         allowed_extensions.contains(&extension)
     } else {
         false
+    }
+}
+
+fn get_base64_file_size(base64: &str) -> Result<usize, Errors> {
+    match engine::general_purpose::STANDARD.decode(base64) {
+        Ok(decoded_data) => {
+            println!("File Size: {}", decoded_data.len());
+            return Ok(decoded_data.len());
+        }
+        Err(_) => return Err(Errors::InvalidBase64String),
+    }
+}
+
+fn validate(filename: &str, base64: &str) -> Result<bool, Errors> {
+    if is_allowed_file_type(filename) {
+        match get_base64_file_size(base64) {
+            Ok(size) => {
+                if size <= ALLOWED_FILE_SIZE {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(e) => Err(e), // Propagate the error up as Err
+        }
+    } else {
+        Ok(false)
     }
 }
